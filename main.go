@@ -7,9 +7,15 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 	"github.com/joho/godotenv"
 )
 
+
+type TrafficResponse struct {
+	Level string `json:"level"`
+	Note  string `json:"note"`
+}
 
 type WeatherResponse struct {
 	City       string  `json:"city"`
@@ -23,7 +29,11 @@ type WeatherResponse struct {
 // OpenWeather raw response (partial)
 type openWeatherAPIResponse struct {
 	Name string `json:"name"`
-	Sys  struct {
+	Coord struct {
+		Lat float64 `json:"lat"`
+		Lon float64 `json:"lon"`
+	} `json:"coord"`
+	Sys struct {
 		Country string `json:"country"`
 	} `json:"sys"`
 	Main struct {
@@ -35,6 +45,19 @@ type openWeatherAPIResponse struct {
 		Description string `json:"description"`
 	} `json:"weather"`
 }
+
+
+type uvAPIResponse struct {
+	Current struct {
+		UVI float64 `json:"uvi"`
+	} `json:"current"`
+}
+
+type UVResponse struct {
+	Value float64 `json:"value"`
+	Risk  string  `json:"risk"`
+}
+
 type AQIResponse struct {
 	AQI      int    `json:"aqi"`
 	Category string `json:"category"`
@@ -46,6 +69,33 @@ type waqiAPIResponse struct {
 		AQI int `json:"aqi"`
 	} `json:"data"`
 }
+
+type CityInfoResponse struct {
+	City       string          `json:"city"`
+	Country    string          `json:"country"`
+	Weather    WeatherResponse `json:"weather"`
+	AirQuality AQIResponse     `json:"air_quality"`
+	UV         UVResponse      `json:"uv_index"`
+		Traffic    TrafficResponse `json:"traffic"`
+
+}
+
+
+func uvRisk(uvi float64) string {
+	switch {
+	case uvi < 3:
+		return "Low"
+	case uvi < 6:
+		return "Moderate"
+	case uvi < 8:
+		return "High"
+	case uvi < 11:
+		return "Very High"
+	default:
+		return "Extreme"
+	}
+}
+
 
 func aqiCategory(aqi int) string {
 	switch {
@@ -63,12 +113,7 @@ func aqiCategory(aqi int) string {
 		return "Hazardous"
 	}
 }
-type CityInfoResponse struct {
-	City        string          `json:"city"`
-	Country     string          `json:"country"`
-	Weather     WeatherResponse `json:"weather"`
-	AirQuality  AQIResponse     `json:"air_quality"`
-}
+
 
 
 func weatherHandler(w http.ResponseWriter, r *http.Request) {
@@ -151,6 +196,29 @@ func cityInfoHandler(w http.ResponseWriter, r *http.Request) {
 	var weatherRaw openWeatherAPIResponse
 	json.NewDecoder(weatherResp.Body).Decode(&weatherRaw)
 
+	uvURL := fmt.Sprintf(
+	"https://api.openweathermap.org/data/3.0/onecall?lat=%f&lon=%f&exclude=minutely,hourly,daily,alerts&appid=%s",
+	weatherRaw.Coord.Lat,
+	weatherRaw.Coord.Lon,
+	weatherKey,
+)
+
+uvResp, err := http.Get(uvURL)
+if err != nil {
+	http.Error(w, "Failed to fetch UV index", http.StatusInternalServerError)
+	return
+}
+defer uvResp.Body.Close()
+
+var uvRaw uvAPIResponse
+json.NewDecoder(uvResp.Body).Decode(&uvRaw)
+
+uv := UVResponse{
+	Value: uvRaw.Current.UVI,
+	Risk:  uvRisk(uvRaw.Current.UVI),
+}
+
+
 	weather := WeatherResponse{
 		City:      weatherRaw.Name,
 		Country:   weatherRaw.Sys.Country,
@@ -189,15 +257,56 @@ func cityInfoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := CityInfoResponse{
-		City:       weather.City,
-		Country:    weather.Country,
-		Weather:    weather,
-		AirQuality: aqi,
-	}
+	City:       weather.City,
+	Country:    weather.Country,
+	Weather:    weather,
+	AirQuality: aqi,
+	UV:         uv,
+		Traffic:    trafficLevel(),
+
+	
+}
+
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
+
+func trafficLevel() TrafficResponse {
+	now := time.Now()
+	hour := now.Hour()
+	weekday := now.Weekday()
+
+	isWeekend := weekday == time.Saturday || weekday == time.Sunday
+
+	level := "Low"
+
+	if isWeekend {
+		switch {
+		case hour >= 11 && hour <= 20:
+			level = "Moderate"
+		default:
+			level = "Low"
+		}
+	} else {
+		switch {
+		case hour >= 8 && hour <= 10:
+			level = "High"
+		case hour >= 17 && hour <= 20:
+			level = "High"
+		case hour >= 11 && hour <= 16:
+			level = "Moderate"
+		default:
+			level = "Low"
+		}
+	}
+
+	return TrafficResponse{
+		Level: level,
+		Note:  "Estimated based on time and day (weekend/weekday)",
+	}
+}
+
 
 
 
