@@ -17,6 +17,17 @@ type TrafficResponse struct {
 	Note  string `json:"note"`
 }
 
+type CitySuggestion struct {
+	Name    string `json:"name"`
+	Country string `json:"country"`
+}
+
+type geoAPIResponse []struct {
+	Name    string `json:"name"`
+	Country string `json:"country"`
+}
+
+
 type WeatherResponse struct {
 	City       string  `json:"city"`
 	Country    string  `json:"country"`
@@ -78,6 +89,47 @@ type CityInfoResponse struct {
 	UV         UVResponse      `json:"uv_index"`
 		Traffic    TrafficResponse `json:"traffic"`
 
+}
+
+func citySearchHandler(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		http.Error(w, "query parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	apiKey := os.Getenv("OPENWEATHER_API_KEY")
+	if apiKey == "" {
+		http.Error(w, "API key not configured", http.StatusInternalServerError)
+		return
+	}
+
+	geoURL := fmt.Sprintf(
+		"https://api.openweathermap.org/geo/1.0/direct?q=%s&limit=5&appid=%s",
+		url.QueryEscape(query),
+		apiKey,
+	)
+
+	resp, err := http.Get(geoURL)
+	if err != nil {
+		http.Error(w, "Failed to fetch cities", http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	var raw geoAPIResponse
+	json.NewDecoder(resp.Body).Decode(&raw)
+
+	var cities []CitySuggestion
+	for _, c := range raw {
+		cities = append(cities, CitySuggestion{
+			Name:    c.Name,
+			Country: c.Country,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(cities)
 }
 
 
@@ -325,6 +377,8 @@ func main() {
 
 	http.HandleFunc("/weather", weatherHandler)
 	http.HandleFunc("/city-info", cityInfoHandler)
+	http.HandleFunc("/cities", citySearchHandler)
+
 
 
 	log.Println("Server running on port", port)
