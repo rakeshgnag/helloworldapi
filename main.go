@@ -92,6 +92,11 @@ type CityInfoResponse struct {
 }
 
 func citySearchHandler(w http.ResponseWriter, r *http.Request) {
+	enableCORS(w)
+
+	if r.Method == http.MethodOptions {
+		return
+	}
 	query := r.URL.Query().Get("q")
 	if query == "" {
 		http.Error(w, "query parameter is required", http.StatusBadRequest)
@@ -169,6 +174,11 @@ func aqiCategory(aqi int) string {
 
 
 func weatherHandler(w http.ResponseWriter, r *http.Request) {
+	enableCORS(w)
+
+	if r.Method == http.MethodOptions {
+		return
+	}
 	city := r.URL.Query().Get("city")
 	if city == "" {
 		http.Error(w, "city parameter is required", http.StatusBadRequest)
@@ -219,6 +229,11 @@ func weatherHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func cityInfoHandler(w http.ResponseWriter, r *http.Request) {
+	enableCORS(w)
+
+	if r.Method == http.MethodOptions {
+		return
+	}
 	city := r.URL.Query().Get("city")
 	if city == "" {
 		http.Error(w, "city parameter is required", http.StatusBadRequest)
@@ -361,6 +376,11 @@ func trafficLevel() TrafficResponse {
 
 
 
+func enableCORS(w http.ResponseWriter) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+}
 
 
 func main() {
